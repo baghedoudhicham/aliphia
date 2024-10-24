@@ -11,15 +11,22 @@ const corsOptions = {
     origin: [
         'https://framer.com',
         'https://www.framer.com',
-        'https://*.framer.app',  // Allow all Framer preview domains
-        'http://localhost:3000'  // For local testing
+        'https://*.framer.app',
+        'https://*.framercanvas.com',
+        'https://project-*.framercanvas.com',
+        'http://localhost:3000'
     ],
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-KEYALI-API', 'Authorization'],
-    credentials: true
+    methods: ['GET', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'X-KEYALI-API', 'Accept'],
+    credentials: false, // Changed to false since we're not sending credentials
+    preflightContinue: false,
+    optionsSuccessStatus: 204
 };
 
 app.use(cors(corsOptions));
+
+// Also add a preflight handler
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
 // Middleware to log requests
