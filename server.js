@@ -14,6 +14,20 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.post('/api/checkout', async (req, res) => {
+    const { items, customerInfo } = req.body;
+  
+    try {
+      // Process the order (you can save it to a database, send an email, etc.)
+      console.log('Order placed:', { items, customerInfo });
+  
+      res.json({ success: true, message: 'Order placed successfully!' });
+    } catch (error) {
+      console.error('Error placing order:', error.message);
+      res.status(500).json({ success: false, message: 'Failed to place the order' });
+    }
+  });
+  
 
 // Test endpoint
 app.get('/test', (req, res) => {
