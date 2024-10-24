@@ -6,8 +6,32 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// Enhanced CORS configuration for Framer
+const corsOptions = {
+    origin: [
+        'https://framer.com',
+        'https://www.framer.com',
+        'https://*.framer.app',  // Allow all Framer preview domains
+        'http://localhost:3000'  // For local testing
+    ],
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'X-KEYALI-API', 'Authorization'],
+    credentials: true
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
+
+// Middleware to log requests
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+    next();
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+});
 
 // Route to fetch multiple items from Aliphia API
 app.get('/api/products', async (req, res) => {
@@ -15,7 +39,7 @@ app.get('/api/products', async (req, res) => {
         const response = await axios.get('https://aliphia.com/v1/api_public/items', {
             params: {
                 'X-KEYALI-API': process.env.ALIBIA_API_KEY,
-                'limit': 10 // Adjust this number as needed
+                'limit': req.query.limit || 10
             },
             auth: {
                 username: process.env.ALIBIA_USERNAME,
@@ -26,14 +50,28 @@ app.get('/api/products', async (req, res) => {
             },
         });
 
-        res.status(200).json(response.data.response.items);
+        // Add CORS headers specifically for Framer
+        res.header('Access-Control-Allow-Origin', '*');
+        res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.header('Access-Control-Allow-Headers', 'Content-Type, X-KEYALI-API');
+
+        res.status(200).json({
+            success: true,
+            data: response.data.response.items,
+            timestamp: new Date().toISOString()
+        });
     } catch (error) {
         console.error('Error fetching products:', error.response ? error.response.data : error.message);
-        res.status(500).json({ error: 'Failed to fetch products' });
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch products',
+            details: error.response ? error.response.data : error.message,
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
-// Existing route to fetch item by ID
+// Existing route to fetch item by ID with enhanced error handling
 app.get('/api/item/:id', async (req, res) => {
     const { id } = req.params;
 
@@ -51,13 +89,23 @@ app.get('/api/item/:id', async (req, res) => {
             },
         });
 
-        res.status(200).json(response.data.response.item);
+        res.status(200).json({
+            success: true,
+            data: response.data.response.item,
+            timestamp: new Date().toISOString()
+        });
     } catch (error) {
         console.error('Error fetching item:', error.response ? error.response.data : error.message);
-        res.status(500).json({ error: 'Failed to fetch item' });
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch item',
+            details: error.response ? error.response.data : error.message,
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV}`);
 });
