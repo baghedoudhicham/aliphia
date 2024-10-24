@@ -6,6 +6,9 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// In-memory storage for cart data (consider using Redis or MongoDB in production)
+const carts = new Map();
+
 // Enhanced CORS configuration for Framer
 const corsOptions = {
     origin: [
@@ -16,16 +19,14 @@ const corsOptions = {
         'https://project-*.framercanvas.com',
         'http://localhost:3000'
     ],
-    methods: ['GET', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-KEYALI-API', 'Accept'],
-    credentials: false, // Changed to false since we're not sending credentials
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'X-KEYALI-API', 'Accept', 'X-Cart-ID'],
+    credentials: false,
     preflightContinue: false,
     optionsSuccessStatus: 204
 };
 
 app.use(cors(corsOptions));
-
-// Also add a preflight handler
 app.options('*', cors(corsOptions));
 app.use(express.json());
 
@@ -40,7 +41,7 @@ app.get('/health', (req, res) => {
     res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Route to fetch multiple items from Aliphia API
+// Existing products endpoint
 app.get('/api/products', async (req, res) => {
     try {
         const response = await axios.get('https://aliphia.com/v1/api_public/items', {
@@ -57,7 +58,6 @@ app.get('/api/products', async (req, res) => {
             },
         });
 
-        // Add CORS headers specifically for Framer
         res.header('Access-Control-Allow-Origin', '*');
         res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.header('Access-Control-Allow-Headers', 'Content-Type, X-KEYALI-API');
@@ -78,7 +78,7 @@ app.get('/api/products', async (req, res) => {
     }
 });
 
-// Existing route to fetch item by ID with enhanced error handling
+// Existing single item endpoint
 app.get('/api/item/:id', async (req, res) => {
     const { id } = req.params;
 
@@ -108,6 +108,135 @@ app.get('/api/item/:id', async (req, res) => {
             error: 'Failed to fetch item',
             details: error.response ? error.response.data : error.message,
             timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// New Cart Endpoints
+
+// Create new cart
+app.post('/api/cart', (req, res) => {
+    const cartId = Date.now().toString();
+    carts.set(cartId, { items: [], created: new Date().toISOString() });
+    res.status(201).json({
+        success: true,
+        cartId,
+        message: 'Cart created successfully'
+    });
+});
+
+// Add item to cart
+app.post('/api/cart/:cartId/items', async (req, res) => {
+    const { cartId } = req.params;
+    const { itemId, quantity } = req.body;
+
+    if (!carts.has(cartId)) {
+        return res.status(404).json({
+            success: false,
+            error: 'Cart not found'
+        });
+    }
+
+    try {
+        // Fetch item details from Aliphia
+        const response = await axios.get(`https://aliphia.com/v1/api_public/item/${itemId}`, {
+            params: { 'X-KEYALI-API': process.env.ALIBIA_API_KEY },
+            auth: {
+                username: process.env.ALIBIA_USERNAME,
+                password: process.env.ALIBIA_PASSWORD,
+            }
+        });
+
+        const item = response.data.response.item;
+        const cart = carts.get(cartId);
+        
+        // Add or update item in cart
+        const existingItemIndex = cart.items.findIndex(i => i.id === itemId);
+        if (existingItemIndex > -1) {
+            cart.items[existingItemIndex].quantity += quantity;
+        } else {
+            cart.items.push({
+                id: itemId,
+                name: item.name,
+                price: item.price,
+                quantity: quantity
+            });
+        }
+
+        carts.set(cartId, cart);
+        res.status(200).json({
+            success: true,
+            cart: cart
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: 'Failed to add item to cart',
+            details: error.message
+        });
+    }
+});
+
+// Get cart contents
+app.get('/api/cart/:cartId', (req, res) => {
+    const { cartId } = req.params;
+    const cart = carts.get(cartId);
+
+    if (!cart) {
+        return res.status(404).json({
+            success: false,
+            error: 'Cart not found'
+        });
+    }
+
+    res.status(200).json({
+        success: true,
+        cart: cart
+    });
+});
+
+// Create order (Cash on Delivery)
+app.post('/api/orders', async (req, res) => {
+    const { cartId, shippingDetails } = req.body;
+
+    if (!carts.has(cartId)) {
+        return res.status(404).json({
+            success: false,
+            error: 'Cart not found'
+        });
+    }
+
+    const cart = carts.get(cartId);
+
+    try {
+        // Here you would typically:
+        // 1. Validate shipping details
+        // 2. Create order in your database
+        // 3. Send order to Aliphia's system if needed
+        // 4. Clear the cart
+
+        const order = {
+            id: `ORDER-${Date.now()}`,
+            items: cart.items,
+            shippingDetails,
+            total: cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0),
+            status: 'pending',
+            paymentMethod: 'cash_on_delivery',
+            created: new Date().toISOString()
+        };
+
+        // Clear the cart after successful order creation
+        carts.delete(cartId);
+
+        res.status(201).json({
+            success: true,
+            order: order
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: 'Failed to create order',
+            details: error.message
         });
     }
 });
